@@ -42,7 +42,7 @@ simple export of symbols.
 
 Enable C<use strict> and C<use warnings> (unless those flags have been changed from the default
 via other means), and C<< use parent "DBIx::Class::Core" >> unless
-C<< __PACKAGE__->can('add_columns') >>.
+C<< __PACKAGE__->can('add_column') >>.
 
 =cut
 
@@ -52,7 +52,7 @@ sub swp :Export(-) {
 	my $self= shift;
 	require strict; strict->import if $^H == $DBIx::Class::ResultDDL::_default_h;
 	require warnings; warnings->import if $^W == $DBIx::Class::ResultDDL::_default_w;
-	unless ($self->{into}->can('add_columns')) {
+	unless ($self->{into}->can('add_column')) {
 		require DBIx::Class::Core;
 		no strict 'refs';
 		push @{ $self->{into} . '::ISA' }, 'DBIx::Class::Core';
@@ -87,6 +87,18 @@ sub V0 :Export(-) {
 
 This tag selects the following symbols:
 
+  table
+  col
+    null default auto_inc fk
+    integer unsigned tinyint smallint bigint decimal numeric
+    char varchar nchar nvarchar binary varbinary blob text ntext
+    tinyblob mediumblob longblob tinytext mediumtext longtext
+    date datetime timestamp enum bool boolean
+    inflate_json
+  primary_key
+  rel_one rel_many has_one might_have has_many belongs_to many_to_many
+    ddl_cascade dbic_cascade
+
 =cut
 
 my @V0= qw(
@@ -117,7 +129,7 @@ export @V0;
 
 sub table {
 	my $name= shift;
-	DBIx::Class::Core->can('table')->($CALLER||caller, $name);
+	DBIx::Class::Core->can('table')->(scalar($CALLER||caller), $name);
 }
 
 =head2 col
@@ -160,9 +172,36 @@ sub col {
 
   is_nullable => 1
 
+=item auto_inc
+
+  is_auto_increment => 1
+
+=item fk
+
+  is_foreign_key => 1
+
+=item default($value | @value)
+
+  default_value => $value
+  default_value => [ @value ] # if more than one param
+
+=cut
+
+sub null       { is_nullable => 1 }
+sub auto_inc   { is_auto_increment => 1 }
+sub fk         { is_foreign_key => 1 }
+#sub pk        { is_primary_key => 1 }
+sub default    { default_value => (@_ > 1? [ @_ ] : $_[0]) }
+
 =item integer, integer($size)
 
   data_type => 'integer', size => $size // 11
+
+=item unsigned
+
+  extra => { unsigned => 1 }
+
+MySQL specific flag to be combined with C<integer>
 
 =item tinyint
 
@@ -186,8 +225,8 @@ sub col {
 
 =cut
 
-sub null        { is_nullable => 1 }
 sub integer     { data_type => 'integer',   size => (defined $_[0]? $_[0] : 11) }
+sub unsigned    { 'extra.unsigned' => 1 }
 sub tinyint     { data_type => 'tinyint',   size => 4 }
 sub smallint    { data_type => 'smallint',  size => 6 }
 sub bigint      { data_type => 'bigint',    size => 22 }
@@ -197,17 +236,20 @@ sub decimal     {
 }
 sub numeric     { &decimal, data_type => 'numeric' }
 
-=item enum( @values )
-
-  data_type => 'enum', extra => { list => [ @values ] }
-
 =item char, char($size)
 
   data_type => 'char', size => $size // 1
 
-=item varchar, varchar($size)
+=item varchar, varchar($size), varchar(MAX)
 
   data_type => 'varchar', size => $size // 255
+
+=item nvarchar, nvarchar($size), nvarchar(MAX)
+
+SQL Server specific type for unicode character data.  The constant C<MAX> is provided to match
+DDL notation.
+
+  data_type => 'nvarchar', size => $size // 255
 
 =item binary, binary($size)
 
@@ -219,76 +261,119 @@ sub numeric     { &decimal, data_type => 'numeric' }
 
 =item blob, blob($size)
 
-Note: this one is mysql-specific for now....
+  data_type => 'blob',
+  size => $size if defined $size
 
-for $size <= 0xFF
+Note: For MySQL, you need to change the type according to '$size'.  A MySQL blob is C<< 2^16 >>
+max length, and probably none of your binary data would be that small.  Consider C<mediumblob>
+or C<longblob>, or consider overriding C<< My::Schema::sqlt_deploy_hook >> to perform this
+conversion automatically according to which DBMS you are connected to.
 
-  data_type => 'tinyblob', size => $size
+For SQL Server, newer versions deprecate C<blob> in favor of C<VARCHAR(MAX)>.  This is another
+detail you might take care of in sqlt_deploy_hook.
 
-for $size <= 0xFFFF
+=item tinyblob
 
-  data_type => 'blob', size => $size
+MySQL-specific type for small blobs
 
-for $size <= 0xFFFFFF or !defined $size
+  data_type => 'tinyblob', size => 0xFF
 
-  data_type => 'mediumblob', size => $size // 0xFFFFFF
+=item mediumblob
 
-else
+MySQL-specific type for larger blobs
 
-  data_type => 'longblob', size => $size
+  data_type => 'mediumblob', size => 0xFFFFFF
+
+=item longblob
+
+MySQL-specific type for the longest supported blob type
+
+  data_type => 'longblob', size => 0xFFFFFFFF
 
 =item text, text($size)
 
-Same as blob, but replacing 'text' for the word 'blob' in the data_type.
+  data_type => 'text',
+  size => $size if defined $size
+
+See MySQL notes in C<blob>.  For SQL Server, you might want C<ntext> or C<< varchar(MAX) >> instead.
+
+=item tinytext
+
+  data_type => 'tinytext', size => 0xFF
+
+=item mediumtext
+
+  data_type => 'mediumtext', size => 0xFFFFFF
+
+=item longtext
+
+  data_type => 'longtext', size => 0xFFFFFFFF
+
+=item ntext
+
+SQL-Server specific type for unicode C<text>.  Note that newer versions prefer C<< nvarchar(MAX) >>.
+
+  data_type => 'ntext', size => 0x3FFFFFFF
+
+=cut
+
+sub char        { data_type => 'char',      size => (defined $_[0]? $_[0] : 1) }
+sub nchar       { data_type => 'nchar',     size => (defined $_[0]? $_[0] : 1) }
+sub varchar     { data_type => 'varchar',   size => (defined $_[0]? $_[0] : 255) }
+sub nvarchar    { data_type => 'nvarchar',  size => (defined $_[0]? $_[0] : 255) }
+sub MAX         { 'MAX' }
+sub binary      { data_type => 'binary',    size => (defined $_[0]? $_[0] : 255) }
+sub varbinary   { data_type => 'varbinary', size => (defined $_[0]? $_[0] : 255) }
+
+sub blob        { data_type => 'blob',      (defined $_[0]? (size => $_[0]) : ()) }
+sub tinyblob    { data_type => 'tinyblob',  size => 0xFF }
+sub mediumblob  { data_type => 'mediumblob',size => 0xFFFFFF }
+sub longblob    { data_type => 'longblob',  size => 0xFFFFFFFF }
+
+sub text        { data_type => 'text',      (defined $_[0]? (size => $_[0]) : ()) }
+sub ntext       { data_type => 'ntext',     size => (defined $_[0]? $_[0] : 0x3FFFFFFF) }
+sub tinytext    { data_type => 'tinytext',  size => 0xFF }
+sub mediumtext  { data_type => 'mediumtext',size => 0xFFFFFF }
+sub longtext    { data_type => 'longtext',  size => 0xFFFFFFFF }
+
+=item enum( @values )
+
+  data_type => 'enum', extra => { list => [ @values ] }
+
+=item bool, boolean
+
+  data_type => 'boolean'
+
+Note that SQL Server has 'bit' instead.
+
+=item bit, bit($size)
+
+  data_type => 'bit', size => $size // 1
+
+To be database agnostic, consider using 'bool' and override C<< My::Scema::sqlt_deploy_hook >>
+to rewrite it to 'bit' when deployed to SQL Server.
 
 =cut
 
 sub enum        { data_type => 'enum', 'extra.list' => [ @_ ]}
 sub boolean     { data_type => 'boolean' }
-BEGIN { *bool= *boolean; }
-
-sub char        { data_type => 'char',      size => (defined $_[0]? $_[0] : 1) }
-sub varchar     { data_type => 'varchar',   size => (defined $_[0]? $_[0] : 255) }
-sub nchar       { data_type => 'nchar',     size => (defined $_[0]? $_[0] : 255) }
-sub nvarchar    { data_type => 'nvarchar',  size => (defined $_[0]? $_[0] : 255) }
-sub binary      { data_type => 'binary',    size => (defined $_[0]? $_[0] : 255) }
-sub varbinary   { data_type => 'varbinary', size => (defined $_[0]? $_[0] : 255) }
-my %blobsizenames= ( med => 0xFFFFFF, medium => 0xFFFFFF, long => 0xFFFFFFFF, tiny => 0xFF );
-sub blob        {
-	my $size= shift || 0xFFFFFF;
-	unless ($size =~ /[0-9]+/) {
-		$blobsizenames{$size} or die "Unrecognized blob size modifier: $size";
-		$size= $blobsizenames{$size};
-	}
-	my $tname= ($size > 0xFFFFFF? 'longblob' : ($size > 0xFFFF? 'mediumblob' : ($size > 0xFF? 'blob' : 'tinyblob')));
-	
-	return data_type => $tname, size => $size;
-}
-sub text {
-	my @result= blob(@_);
-	$result[1] =~ s/blob/text/;
-	return @result;
-}
-sub ntext {
-	my @result= blob(@_);
-	$result[1] =~ s/blob/ntext/;
-	return @result;
-}
+sub bool        { data_type => 'boolean' }
+sub bit         { data_type => 'bit',  size => (defined $_[0]? $_[0] : 1) }
 
 =item date, date($timezone)
 
   data_type => 'date'
-  time_zone => $timezone
+  time_zone => $timezone if defined $timezone
 
-=item datetime
+=item datetime, datetime($timezone)
 
   data_type => 'datetime'
-  time_zone => $timezone
+  time_zone => $timezone if defined $timezone
 
-=item timestamp
+=item timestamp, timestamp($timezone)
 
   date_type => 'timestamp'
-  time_zone => $timezone
+  time_zone => $timezone if defined $timezone
 
 =cut
 
@@ -296,37 +381,12 @@ sub date        { data_type => 'date',     (@_? (time_zone => $_[0]) : ()) }
 sub datetime    { data_type => 'datetime', (@_? (time_zone => $_[0]) : ()) }
 sub timestamp   { data_type => 'timestamp',(@_? (time_zone => $_[0]) : ()) }
 
-=item unsigned
-
-  extra => { unsigned => 1 }
-
-=item auto_inc
-
-  is_auto_increment => 1
-
-=item fk
-
-  is_foreign_key => 1
-
-=item default($value | @value)
-
-  default_value => $value
-  default_value => [ @value ] # if more than one param
-
-=cut
-
-sub unsigned   { 'extra.unsigned' => 1 }
-sub auto_inc   { is_auto_increment => 1 }
-sub fk         { is_foreign_key => 1 }
-#sub pk        { is_primary_key => 1 }
-sub default    { default_value => (@_ > 1? [ @_ ] : $_[0]) }
-
 =item inflate_json
 
-Adds the component 'InflateColumn::Serializer' to the current package if it wasn't
-added already, and then returns
-
   serializer_class => 'JSON'
+
+Also adds the component 'InflateColumn::Serializer' to the current package if it wasn't
+added already.
 
 =cut
 
@@ -353,43 +413,55 @@ sub primary_key { ($CALLER||caller)->set_primary_key(@_); }
 
   belongs_to $rel_name, $peer_class, $condition, @attr_list;
   belongs_to $rel_name, { colname => "$ResultClass.$colname" }, @attr_list;
-  # becomes
+  # becomes...
   __PACKAGE__->belongs_to($rel_name, $peer_class, $condition, { @attr_list });
+
+Note that the normal DBIC belongs_to requires conditions to be of the form
+
+  { "foreign.$their_col" => "self.$my_col" }
+
+but all these sugar functions allow it to be written the other way around, and use a table
+name in place of "foreign.".
 
 =head2 might_have
 
   might_have $rel_name, $peer_class, $condition, @attr_list;
   might_have $rel_name, { colname => "$ResultClass.$colname" }, @attr_list;
-  # becomes
+  # becomes...
   __PACKAGE__->might_have($rel_name, $peer_class, $condition, { @attr_list });
 
 =head2 has_one
 
   has_one $rel_name, $peer_class, $condition, @attr_list;
   has_one $rel_name, { colname => "$ResultClass.$colname" }, @attr_list;
-  # becomes
+  # becomes...
   __PACKAGE__->has_one($rel_name, $peer_class, $condition, { @attr_list });
 
 =head2 has_many
 
   has_many $rel_name, $peer_class, $condition, @attr_list;
   has_many $rel_name, { colname => "$ResultClass.$colname" }, @attr_list;
-  # becomes
+  # becomes...
   __PACKAGE__->has_one($rel_name, $peer_class, $condition, { @attr_list });
   
 =head2 many_to_many
 
   many_to_many $name => $rel_to_linktable, $rel_from_linktable;
-  # becomes
+  # becomes...
   __PACKAGE__->many_to_many(@_);
 
 =head2 rel_one
 
-Declares single-related-record left-join relation without implying ownership.
+Declares a single-record left-join relation U<without implying ownership>.
+Note that the DBIC relations that do imply ownership like C<might_have> I<cause an implied
+deletion of the related row> if you delete a row from this table that references it, even if
+your schema did not have a cascading foreign key.  This DBIC feature is controlled by the
+C<cascading_delete> option, and using this sugar function to set up the relation defaults that
+feature to "off".
 
   rel_one $rel_name, $peer_class, $condition, @attr_list;
   rel_one $rel_name, { $mycol => "$ResultClass.$fcol", ... }, @attr_list;
-  # becomes
+  # becomes...
   __PACKAGE__->add_relationship(
     $rel_name, $peer_class, { "foreign.$fcol" => "self.$mycol" },
     {
@@ -407,12 +479,12 @@ Declares single-related-record left-join relation without implying ownership.
 
   rel_many $name => { $my_col => "$class.$col", ... }, @options;
 
-Same as L</rel_one>, but generates a multi-accessor.
+Same as L</rel_one>, but generates a one-to-many relation with a multi-accessor.
 
 =cut
 
 sub rel_one {
-   _add_rel(scalar($CALLER||caller), 'rel_one', @_);
+	_add_rel(scalar($CALLER||caller), 'rel_one', @_);
 }
 sub rel_many {
 	_add_rel(scalar($CALLER||caller), 'rel_many', @_);
@@ -573,7 +645,7 @@ This re-enables the dbic-side cascading that was disabled by default in the C<re
 =cut
 
 sub dbic_cascade {
-	my $mode= shift // 1;
+	my $mode= defined $_[0]? $_[0] : 1;
 	return
 		cascade_copy => $mode,
 		cascade_delete => $mode;
