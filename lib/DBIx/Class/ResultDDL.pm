@@ -665,6 +665,11 @@ where appropriate, instead of relying purely on sugar methods.
 If you are missing your favorite column flag or something, feel free to
 contribute a patch.
 
+=head1 THANKS
+
+Thanks to Clippard Instrument Laboratory Inc. and Ellis Partners in Management Solutions
+for supporting open source, including portions of this module.
+
 =cut
 
 1;
