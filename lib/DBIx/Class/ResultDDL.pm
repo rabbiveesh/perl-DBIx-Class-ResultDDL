@@ -244,12 +244,19 @@ sub numeric     { &decimal, data_type => 'numeric' }
 
   data_type => 'varchar', size => $size // 255
 
+=item nchar
+
+SQL Server specific type for unicode char
+
 =item nvarchar, nvarchar($size), nvarchar(MAX)
 
-SQL Server specific type for unicode character data.  The constant C<MAX> is provided to match
-DDL notation.
+SQL Server specific type for unicode character data.
 
   data_type => 'nvarchar', size => $size // 255
+
+=item MAX
+
+Constant for 'MAX', used by SQL Server for C<< varchar(MAX) >>.
 
 =item binary, binary($size)
 
@@ -452,7 +459,7 @@ name in place of "foreign.".
 
 =head2 rel_one
 
-Declares a single-record left-join relation U<without implying ownership>.
+Declares a single-record left-join relation B<without implying ownership>.
 Note that the DBIC relations that do imply ownership like C<might_have> I<cause an implied
 deletion of the related row> if you delete a row from this table that references it, even if
 your schema did not have a cascading foreign key.  This DBIC feature is controlled by the
