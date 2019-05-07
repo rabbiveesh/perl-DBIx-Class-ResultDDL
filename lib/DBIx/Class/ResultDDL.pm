@@ -12,6 +12,7 @@ use Carp;
 
   package MyApp::Schema::Result::Artist;
   use DBIx::Class::ResultDDL -V0;
+  
   table 'artist';
   col id   => integer, unsigned, auto_inc;
   col name => varchar(25), null;
@@ -29,7 +30,7 @@ This module heavily pollutes your symbol table in the name of extreme convenienc
 C<-V0> option has the added feature of automatically removing those symbols at end-of-scope
 as if you had said C<use namespace::clean;>.
 
-This module has a versioned API, to help prevent name collisions.  If you request the C<-v0>
+This module has a versioned API, to help prevent name collisions.  If you request the C<-V0>
 behavior, you can rely on that to remain the same across upgrades.
 
 =head1 EXPORTED FEATURES
@@ -66,9 +67,10 @@ Remove all added symbols at the end of current scope.
 =cut
 
 sub autoclean :Export(-) {
-	my $x;
-	shift->{scope} ||= \$x;
-	on_scope_end { undef $x };
+	my $self= shift;
+	my $sref= $self->exporter_config_scope;
+	$self->exporter_config_scope($sref= \my $x) unless $sref;
+	on_scope_end { $$sref->clean };
 }
 
 =head2 C<-V0>
