@@ -73,14 +73,17 @@ sub autoclean :Export(-) {
 	on_scope_end { $$sref->clean };
 }
 
-=head2 C<-V0>
+=head2 C<-V0>, C<-V1>, ...
 
-Implies C<-swp>, C<:V0>, and C<-autoclean>.
+Implies C<-swp>, C<:V0> (or C<:V1>, etc), and C<-autoclean>
 
 =cut
 
 sub V0 :Export(-) {
 	shift->exporter_also_import('-swp',':V0','-autoclean');
+}
+sub V1 :Export(-) {
+	shift->exporter_also_import('-swp',':V1','-autoclean');
 }
 
 =head1 EXPORTED COLLECTIONS
@@ -103,10 +106,10 @@ This tag selects the following symbols:
 
 =cut
 
-my @V0= qw(
+my @common= qw(
 	table
 	col
-	  null default auto_inc fk
+	  null default fk
 	  integer unsigned tinyint smallint bigint decimal numeric
 	  char varchar nchar nvarchar binary varbinary blob text ntext
 	  date datetime timestamp enum bool boolean
@@ -116,8 +119,9 @@ my @V0= qw(
 	  ddl_cascade dbic_cascade
 );
 our %EXPORT_TAGS;
-$EXPORT_TAGS{V0}= \@V0;
-export @V0;
+$EXPORT_TAGS{V1}= [ @common, 'auto_inc' ];
+$EXPORT_TAGS{V0}= [ @common, auto_inc0 => { -as => 'auto_inc' } ];
+export @common, qw( auto_inc auto_inc0 );
 
 =head1 EXPORTED METHODS
 
@@ -165,7 +169,9 @@ sub col {
 		$dest= ($dest->{$_} ||= {}) for @path;
 		$dest->{$k}= $v;
 	}
-	($CALLER||caller)->add_column($name, $opts);
+	my $pkg= $CALLER || caller;
+	$pkg->add_column($name, $opts);
+	1;
 }
 
 =over
@@ -176,7 +182,15 @@ sub col {
 
 =item auto_inc
 
-  is_auto_increment => 1
+  is_auto_increment => 1, 'extra.auto_increment_type' => 'monotonic'
+
+(The 'monotonic' bit is required to correctly deploy on SQLite.  You can read the
+L<gory details|https://github.com/dbsrgits/sql-translator/pull/26> but the short
+version is that SQLite gives you "fake" autoincrement by default, and you only get
+real ANSI-style autoincrement if you ask for it.  SQL::Translator doesn't ask for
+the extra work by default, but if you're declaring columns by hand expecting it to
+be platform-neutral, then you probably want this.  SQLite also requires data_type
+"integer", and for it to be the primary key.)
 
 =item fk
 
@@ -190,9 +204,9 @@ sub col {
 =cut
 
 sub null       { is_nullable => 1 }
-sub auto_inc   { is_auto_increment => 1 }
-sub fk         { is_foreign_key => 1 }
-#sub pk        { is_primary_key => 1 }
+sub auto_inc   { is_auto_increment => 1, 'extra.auto_increment_type' => 'monotonic' }
+sub auto_inc0  { is_auto_increment => 1 }
+sub fk         { is_foreign_key => (defined $_[0]? $_[0] : 1) }
 sub default    { default_value => (@_ > 1? [ @_ ] : $_[0]) }
 
 =item integer, integer($size)
