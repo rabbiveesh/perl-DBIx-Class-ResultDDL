@@ -101,6 +101,7 @@ This tag selects the following symbols:
     date datetime timestamp enum bool boolean
     inflate_json
   primary_key
+  unique
   rel_one rel_many has_one might_have has_many belongs_to many_to_many
     ddl_cascade dbic_cascade
 
@@ -115,6 +116,7 @@ my @common= qw(
 	  date datetime timestamp enum bool boolean
 	  inflate_json
 	primary_key
+        unique
 	rel_one rel_many has_one might_have has_many belongs_to many_to_many
 	  ddl_cascade dbic_cascade
 );
@@ -431,6 +433,16 @@ Shortcut for __PACKAGE__->set_primary_key(@cols)
 =cut
 
 sub primary_key { ($CALLER||caller)->set_primary_key(@_); }
+
+=head2 unique
+
+  unique($name?, \@cols)
+
+Shortucut for __PACKAGE__->add_unique_constraint($name? \@cols)
+
+=cut 
+
+sub unique { ($CALLER||caller)->add_unique_constraint(@_) }
 
 =head2 belongs_to
 
