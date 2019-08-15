@@ -8,7 +8,6 @@ my $ret= eval q{
 	col c0 => integer, auto_inc;
 	col c1 => varchar(50), null, default("foo");
 	primary_key 'c0';
-        unique ['c0', 'c1'];
 	1;
 };
 my $err= $@;
@@ -21,7 +20,6 @@ $ret= eval q{
 	col c2 => integer;
 	col c3 => varchar(50), null, default("foo");
 	primary_key 'c2';
-        unique 'table5_c2_c3', ['c2','c3'];
 	
 	belongs_to belong_table4 => 'test::Table4', { 'foreign.c0' => 'self.c2' };
 	has_many   has_table4 => { c3 => 'Table4.c1' };

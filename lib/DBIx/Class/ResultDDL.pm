@@ -11,7 +11,7 @@ use Carp;
 =head1 SYNOPSIS
 
   package MyApp::Schema::Result::Artist;
-  use DBIx::Class::ResultDDL -V0;
+  use DBIx::Class::ResultDDL -V2;
   
   table 'artist';
   col id   => integer, unsigned, auto_inc;
@@ -27,10 +27,10 @@ This is Yet Another Sugar Module for building DBIC result classes.  It provides 
 domain-specific-language that feels almost like writing DDL.
 
 This module heavily pollutes your symbol table in the name of extreme convenience, so the
-C<-V0> option has the added feature of automatically removing those symbols at end-of-scope
+C<-Vx> option has the added feature of automatically removing those symbols at end-of-scope
 as if you had said C<use namespace::clean;>.
 
-This module has a versioned API, to help prevent name collisions.  If you request the C<-V0>
+This module has a versioned API, to help prevent name collisions.  If you request the C<-Vx>
 behavior, you can rely on that to remain the same across upgrades.
 
 =head1 EXPORTED FEATURES
@@ -73,22 +73,25 @@ sub autoclean :Export(-) {
 	on_scope_end { $$sref->clean };
 }
 
-=head2 C<-V0>, C<-V1>, ...
+=head2 C<-V2>, C<-Vx> (where x in 0..2)
 
-Implies C<-swp>, C<:V0> (or C<:V1>, etc), and C<-autoclean>
+Implies C<-swp>, C<:Vx>, and C<-autoclean>
 
 =cut
 
-sub V0 :Export(-) {
-	shift->exporter_also_import('-swp',':V0','-autoclean');
-}
-sub V1 :Export(-) {
-	shift->exporter_also_import('-swp',':V1','-autoclean');
+sub exporter_autoload_symbol {
+	my ($self, $sym)= @_;
+	if ($sym =~ /^-V(\d+)/) {
+		my $tag= ":V$1";
+		my $method= sub { shift->exporter_also_import('-swp',$tag,'-autoclean') };
+		return $EXPORT{$sym} ||= [ $method, 0 ]; # takes 0 arguments
+	}
+	$self->next::method($sym);
 }
 
 =head1 EXPORTED COLLECTIONS
 
-=head2 C<:V0>
+=head2 C<:V2>
 
 This tag selects the following symbols:
 
@@ -105,6 +108,14 @@ This tag selects the following symbols:
   rel_one rel_many has_one might_have has_many belongs_to many_to_many
     ddl_cascade dbic_cascade
 
+=head2 C<:V1>
+
+Same as V2 but without C<unique>.
+
+=head2 C<:V0>
+
+Same as V1 but C<auto_inc> doesn't set the sqlite 'monotonic' flag.
+
 =cut
 
 my @common= qw(
@@ -116,14 +127,14 @@ my @common= qw(
 	  date datetime timestamp enum bool boolean
 	  inflate_json
 	primary_key
-        unique
 	rel_one rel_many has_one might_have has_many belongs_to many_to_many
 	  ddl_cascade dbic_cascade
 );
 our %EXPORT_TAGS;
+$EXPORT_TAGS{V2}= [ @common, 'auto_inc', 'unique' ];
 $EXPORT_TAGS{V1}= [ @common, 'auto_inc' ];
 $EXPORT_TAGS{V0}= [ @common, auto_inc0 => { -as => 'auto_inc' } ];
-export @common, qw( auto_inc auto_inc0 );
+export @common, qw( auto_inc auto_inc0 unique );
 
 =head1 EXPORTED METHODS
 
