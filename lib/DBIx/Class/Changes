@@ -1,0 +1,6 @@
+  - :V1 tag
+  - auto_inc now sets 'monotonic' flag for sqlite
+  - New export keyword 'unique'
+
+0.01 - 2019-05-05:
+  - Initial version, with :V0 tag

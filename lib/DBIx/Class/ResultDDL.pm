@@ -11,7 +11,7 @@ use Carp;
 =head1 SYNOPSIS
 
   package MyApp::Schema::Result::Artist;
-  use DBIx::Class::ResultDDL -V2;
+  use DBIx::Class::ResultDDL -V1;
   
   table 'artist';
   col id   => integer, unsigned, auto_inc;
@@ -73,7 +73,7 @@ sub autoclean :Export(-) {
 	on_scope_end { $$sref->clean };
 }
 
-=head2 C<-V2>, C<-Vx> (where x in 0..2)
+=head2 C<-V2>, C<-Vx> (where x is a version number)
 
 Implies C<-swp>, C<:Vx>, and C<-autoclean>
 
@@ -91,7 +91,7 @@ sub exporter_autoload_symbol {
 
 =head1 EXPORTED COLLECTIONS
 
-=head2 C<:V2>
+=head2 C<:V1>
 
 This tag selects the following symbols:
 
@@ -108,13 +108,9 @@ This tag selects the following symbols:
   rel_one rel_many has_one might_have has_many belongs_to many_to_many
     ddl_cascade dbic_cascade
 
-=head2 C<:V1>
-
-Same as V2 but without C<unique>.
-
 =head2 C<:V0>
 
-Same as V1 but C<auto_inc> doesn't set the sqlite 'monotonic' flag.
+Same as V1 but lacking C<unique>, and C<auto_inc> doesn't set the sqlite 'monotonic' flag.
 
 =cut
 
@@ -131,8 +127,7 @@ my @common= qw(
 	  ddl_cascade dbic_cascade
 );
 our %EXPORT_TAGS;
-$EXPORT_TAGS{V2}= [ @common, 'auto_inc', 'unique' ];
-$EXPORT_TAGS{V1}= [ @common, 'auto_inc' ];
+$EXPORT_TAGS{V1}= [ @common, 'auto_inc', 'unique' ];
 $EXPORT_TAGS{V0}= [ @common, auto_inc0 => { -as => 'auto_inc' } ];
 export @common, qw( auto_inc auto_inc0 unique );
 
