@@ -35,4 +35,23 @@ subtest auto_inc => sub {
 		'V1 auto_inc also sets sqlite monotonic flag';
 };
 
+subtest arrays => sub {
+	my @text_array= eval q{
+		package test::array0;
+		use DBIx::Class::ResultDDL -V1;
+		array('text')
+	} or diag $@;
+	is \@text_array, [ data_type => 'text[]' ],
+          'text arrays are made correctly';
+
+	my @int_array= eval q{
+		package test::array1;
+		use DBIx::Class::ResultDDL -V1;
+		array('int')
+	} or diag $@;
+	is \@int_array, [ data_type => 'int[]' ],
+          'int arrays are made correctly';
+
+};
+
 done_testing;

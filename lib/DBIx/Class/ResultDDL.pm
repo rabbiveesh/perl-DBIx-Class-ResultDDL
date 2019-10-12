@@ -127,9 +127,9 @@ my @common= qw(
 	  ddl_cascade dbic_cascade
 );
 our %EXPORT_TAGS;
-$EXPORT_TAGS{V1}= [ @common, 'auto_inc', 'unique' ];
+$EXPORT_TAGS{V1}= [ @common, 'auto_inc', 'unique', 'array' ];
 $EXPORT_TAGS{V0}= [ @common, auto_inc0 => { -as => 'auto_inc' } ];
-export @common, qw( auto_inc auto_inc0 unique );
+export @common, qw( auto_inc auto_inc0 unique array );
 
 =head1 EXPORTED METHODS
 
@@ -411,6 +411,8 @@ sub bit         { data_type => 'bit',  size => (defined $_[0]? $_[0] : 1) }
 sub date        { data_type => 'date',     (@_? (time_zone => $_[0]) : ()) }
 sub datetime    { data_type => 'datetime', (@_? (time_zone => $_[0]) : ()) }
 sub timestamp   { data_type => 'timestamp',(@_? (time_zone => $_[0]) : ()) }
+
+sub array       { my $type = shift or die 'array needs a type'; data_type => $type . '[]' }
 
 =item inflate_json
 
