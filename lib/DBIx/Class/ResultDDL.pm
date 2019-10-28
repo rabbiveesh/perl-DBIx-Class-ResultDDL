@@ -692,6 +692,23 @@ sub dbic_cascade {
 		cascade_delete => $mode;
 }
 
+sub view {
+        my ($name, $definition, %opts) = @_;
+        my $pkg= $CALLER || caller;
+        DBIx::Class::Core->can('table_class')->($pkg, 'DBIx::Class::ResultSource::View');
+        DBIx::Class::Core->can('table')->($pkg, $name);
+
+        my $rsi = $pkg->result_source_instance;
+        $rsi->view_definition($definition);
+
+        $rsi->deploy_depends_on($opts{depends}) if $opts{depends};
+        $rsi->is_virtual($opts{virtual});
+        
+        return $rsi
+}
+
+
+
 =head1 MISSING FUNCTIONALITY
 
 The methods above in most cases allow you to insert plain-old-DBIC notation
