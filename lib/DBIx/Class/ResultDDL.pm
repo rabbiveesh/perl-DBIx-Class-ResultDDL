@@ -692,6 +692,24 @@ sub dbic_cascade {
 		cascade_delete => $mode;
 }
 
+=head2 view
+
+  view $view_name, $view_sql, %options;
+
+Makes the current resultsource into a view. This is used instead of
+'table'. Takes two options, 'is_virtual', to make this into a
+virtual view, and  'depends' to list tables this view depends on.
+
+Is the equivalent of
+
+  __PACKAGE__->table_class('DBIx::Class::ResultSource::View');
+  __PACKAGE__->table($view_name);
+
+  __PACKAGE__->result_source_instance->view_definition($view_sql);
+  __PACKAGE__->result_source_instance->deploy_depends_on($options{depends});
+  __PACKAGE__->result_source_instance->is_virtual($options{is_virtual});
+
+=cut
 sub view {
         my ($name, $definition, %opts) = @_;
         my $pkg= $CALLER || caller;
