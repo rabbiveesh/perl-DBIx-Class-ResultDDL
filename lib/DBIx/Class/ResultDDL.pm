@@ -127,9 +127,9 @@ my @common= qw(
 	  ddl_cascade dbic_cascade
 );
 our %EXPORT_TAGS;
-$EXPORT_TAGS{V1}= [ @common, 'auto_inc', 'unique' ];
+$EXPORT_TAGS{V1}= [ @common, 'auto_inc', 'unique', 'view' ];
 $EXPORT_TAGS{V0}= [ @common, auto_inc0 => { -as => 'auto_inc' } ];
-export @common, qw( auto_inc auto_inc0 unique );
+export @common, qw( auto_inc auto_inc0 unique view );
 
 =head1 EXPORTED METHODS
 
