@@ -127,7 +127,7 @@ my @common= qw(
 	  ddl_cascade dbic_cascade
 );
 my @new_in_v1= qw(
-	add_index add_constraint unique array
+	add_index add_constraint unique array view
 );
 our %EXPORT_TAGS;
 $EXPORT_TAGS{V1}= [ @common, 'auto_inc', @new_in_v1 ];
@@ -696,6 +696,40 @@ sub dbic_cascade {
 		cascade_copy => $mode,
 		cascade_delete => $mode;
 }
+
+=head2 view
+
+  view $view_name, $view_sql, %options;
+
+Makes the current resultsource into a view. This is used instead of
+'table'. Takes two options, 'is_virtual', to make this into a
+virtual view, and  'depends' to list tables this view depends on.
+
+Is the equivalent of
+
+  __PACKAGE__->table_class('DBIx::Class::ResultSource::View');
+  __PACKAGE__->table($view_name);
+
+  __PACKAGE__->result_source_instance->view_definition($view_sql);
+  __PACKAGE__->result_source_instance->deploy_depends_on($options{depends});
+  __PACKAGE__->result_source_instance->is_virtual($options{is_virtual});
+
+=cut
+sub view {
+        my ($name, $definition, %opts) = @_;
+        my $pkg= $CALLER || caller;
+        DBIx::Class::Core->can('table_class')->($pkg, 'DBIx::Class::ResultSource::View');
+        DBIx::Class::Core->can('table')->($pkg, $name);
+
+        my $rsi = $pkg->result_source_instance;
+        $rsi->view_definition($definition);
+
+        $rsi->deploy_depends_on($opts{depends}) if $opts{depends};
+        $rsi->is_virtual($opts{virtual});
+        
+        return $rsi
+}
+
 
 =head1 INDEXES AND CONSTRAINTS
 
