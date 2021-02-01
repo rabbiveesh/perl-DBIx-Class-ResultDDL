@@ -257,11 +257,13 @@ sub unsigned    { 'extra.unsigned' => 1 }
 sub tinyint     { data_type => 'tinyint',   size => 4 }
 sub smallint    { data_type => 'smallint',  size => 6 }
 sub bigint      { data_type => 'bigint',    size => 22 }
-sub decimal     {
-	croak "2 size parameters are required" unless scalar(@_) == 2;
-	return data_type => 'decimal',   size => [ @_ ];
+sub decimal     { _numeric(decimal => @_) }
+sub numeric     { _numeric(numeric => @_) }
+sub _numeric {
+	my $type= shift;
+	my $size= @_ == 0? undef : [ @_ ];
+	return data_type => $type, ( @_ > 0? (size => [ @_ ]) : () )
 }
-sub numeric     { &decimal, data_type => 'numeric' }
 
 =item char, char($size)
 
