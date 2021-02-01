@@ -1,57 +1,152 @@
 use Test2::V0;
 no warnings 'once';
+use Data::Dumper;
+sub explain { Data::Dumper->new(\@_)->Indent(2)->Dump }
 
-my $ret= eval q{
-	package test::Table3;
-	use DBIx::Class::ResultDDL -V0;
-	table 'table3';
-	col c0 => integer, auto_inc;
-	col c1 => char(50), null, default("foo");
-	col c2 => varchar(10);
-	col c3 => date;
-	col c4 => datetime('floating');
-	col c5 => datetime('UTC');
-	primary_key 'c0';
-	1;
-};
-my $err= $@;
-ok( $ret, 'eval column defs' ) or diag $err;
 
-subtest auto_inc => sub {
-	my @auto_inc0= eval q{
-		package test::Autoinc0;
-		use DBIx::Class::ResultDDL -V0;
-		auto_inc
-	} or diag $@;
-	is \@auto_inc0, [ is_auto_increment => 1 ],
-		'V0 auto_inc is just boolean flag';
-	
-	my @auto_inc1= eval q{
-		package test::Autoinc1;
-		use DBIx::Class::ResultDDL -V1;
-		auto_inc
-	} or diag $@;
-	is \@auto_inc1, [ is_auto_increment => 1, 'extra.auto_increment_type' => 'monotonic' ],
-		'V1 auto_inc also sets sqlite monotonic flag';
-};
+# test_col_defs $NAME, versions => \@VERSIONS, @COL_DEFS;
+#    COL_DEF ::= [ $PERL_DECL, \%column_info ]
+#            ||  { name => $COL_NAME, spec => $PERL_DECL, column_info => \%column_info }
+#
+# This utility function constructs a resultset with one column for each COL_DEF
+# and then executes a subtest to verify that it compiles and that each column
+# was created with the correct DBIC column_info.  The test is run for each
+# of the ResultDDL versions listed in @VERSIONS.
 
-subtest arrays => sub {
-	my @text_array= eval q{
-		package test::array0;
-		use DBIx::Class::ResultDDL -V1;
-		array('text')
-	} or diag $@;
-	is \@text_array, [ data_type => 'text[]' ],
-          'text arrays are made correctly';
+my $test_n= 0;
+sub test_col_defs {
+	my $name= shift;
+	my $default_versions= { map +($_ => 1), 0, 1 };
+	my @col_tests;
+	while (@_) {
+		local $_= shift;
+		if ($_ eq 'versions') {
+			$default_versions= { map +($_ => 1), @{ shift() } };
+		}
+		if (ref eq 'ARRAY') {
+			my ($spec, $column_info)= @$_;
+			push @col_tests, { name => 'c'.@col_tests, spec => $spec, column_info => $column_info, versions => $default_versions };
+		}
+		elsif (ref eq 'HASH') {
+			$_->{name} ||= 'c'.@col_tests;
+			$_->{versions} ||= $default_versions;
+			push @col_tests, $_;
+		}
+	}
 
-	my @int_array= eval q{
-		package test::array1;
-		use DBIx::Class::ResultDDL -V1;
-		array('int')
-	} or diag $@;
-	is \@int_array, [ data_type => 'int[]' ],
-          'int arrays are made correctly';
+	for my $ver (0..1) {
+		my @cols= grep $_->{versions}{$ver}, @col_tests
+			or next;
+		subtest "$name v$ver" => sub {
+			++$test_n;
+			my $pkg= "test::Result$test_n";
+			my $eval= <<___;
+				package $pkg;
+				use DBIx::Class::ResultDDL -V$ver;
+				table "result$test_n";
+___
+			for (@cols) {
+				$eval .= "col $_->{name} => $_->{spec};\n";
+			}
+			if( ok( eval($eval.'1'), "$name compiled" ) ) {
+				for (@cols) {
+					like $pkg->result_source_instance->column_info($_->{name}), $_->{column_info}, "$_->{spec}"
+						or diag explain $pkg->column_info($_->{name});
+				}
+			} else {
+				diag $eval;
+				diag $@;
+			}
+		};
+	}
+}
 
-};
+test_col_defs(
+	'numeric',
+	versions => [0,1],
+	[ 'integer',
+		{ data_type => 'integer' }
+	],
+	[ 'integer, unsigned',
+		{ data_type => 'integer', extra => { unsigned => 1 } }
+	],
+	[ 'tinyint',
+		{ data_type => 'tinyint', size => 4 }
+	],
+	[ 'smallint',
+		{ data_type => 'smallint', size => 6 }
+	],
+	[ 'bigint',
+		{ data_type => 'bigint', size => 22 }
+	],
+	[ 'numeric(10,2)',
+		{ data_type => 'numeric', size => [10,2] }
+	],
+	versions => [1],  # version 0 didn't allow numeric/decimal without precision
+	[ 'numeric',
+		{ data_type => 'numeric', size => DNE() }
+	],
+	[ 'numeric(4)',
+		{ data_type => 'numeric', size => [4] }
+	],
+);
+
+# Version 1 adds "auto_increment_type => monotonic" for SQLite
+test_col_defs(
+	'auto_inc',
+	versions => [0],
+	[ 'integer, auto_inc',
+		{ data_type => 'integer', extra => DNE }
+	],
+	versions => [1],
+	[ 'integer, auto_inc',
+		{ data_type => 'integer', extra => { auto_increment_type => 'monotonic' } }
+	]
+);
+
+test_col_defs(
+	'char',
+	versions => [0,1],
+	[ 'char',
+		{ data_type => 'char', size => 1, is_nullable => 0 }
+	],
+	[ 'char(50), null, default("foo")',
+		{ data_type => 'char', size => 50, is_nullable => 1, default_value => 'foo' },
+	],
+	[ 'nchar',
+		{ data_type => 'nchar', size => 1, is_nullable => 0 }
+	],
+	[ 'nchar(50)',
+		{ data_type => 'nchar', size => 50 }
+	],
+	[ 'varchar(10)',
+		{ data_type => 'varchar', size => 10, is_nullable => 0 }
+	],
+);
+
+test_col_defs(
+	'date',
+	versions => [0,1],
+	[ 'date',
+		{ data_type => 'date' },
+	],
+	[ 'datetime("floating")',
+		{ data_type => 'datetime', time_zone => 'floating' },
+	],
+	[ 'datetime("UTC")',
+		{ data_type => 'datetime', time_zone => 'UTC' },
+	],
+);
+
+test_col_defs(
+	'arrays',
+	versions => [1],
+	[ 'array("text")',
+		{ data_type => 'text[]' }
+	],
+	[ 'array("int")',
+		{ data_type => 'int[]' }
+	]
+);
 
 done_testing;
