@@ -766,12 +766,18 @@ our %_installed_sqlt_hook_functions;
 sub _get_sqlt_hook_method_array {
 	my $pkg= shift;
 	$_installed_sqlt_hook_functions{$pkg} ||= do {
+		# $pkg->can("sqlt_deploy_hook") is insufficient, because it might be declared
+		# in a parent class, and that is not an error.  It is only an error if it was
+		# already declared in this package.
 		no strict 'refs';
-		no warnings 'closure';
 		my $stash= %{$pkg.'::'};
 		croak "${pkg}::sqlt_deploy_hook already exists; DBIx::Class::ResultDDL won't overwrite it."
 			." (but you can use Moo(se) or Class::Method::Modifiers to apply your own wrapper to this generated method)"
 			if $stash->{sqlt_deploy_hook} && $stash->{sqlt_deploy_hook}{CODE};
+
+		# Create the sub once, bound to this array.  The array can then be extended without
+		# needing to re-declare the sub.
+		no warnings 'closure';
 		my @methods;
 		eval 'sub '.$pkg.'::sqlt_deploy_hook {
 			my $self= shift;
