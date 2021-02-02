@@ -104,7 +104,7 @@ This tag selects the following symbols:
     date datetime timestamp enum bool boolean
     inflate_json
   primary_key
-  unique
+  unique idx create_index
   rel_one rel_many has_one might_have has_many belongs_to many_to_many
     ddl_cascade dbic_cascade
 
@@ -127,7 +127,7 @@ my @common= qw(
 	  ddl_cascade dbic_cascade
 );
 my @new_in_v1= qw(
-	add_index add_constraint unique array view
+	sqlt_add_index sqlt_add_constraint idx create_index unique array view
 );
 our %EXPORT_TAGS;
 $EXPORT_TAGS{V1}= [ @common, 'auto_inc', @new_in_v1 ];
@@ -744,7 +744,7 @@ The method C<sqlt_deploy_hook> is created in the current package the first time 
 functions are called.  If it already exists and wasn't created by DBIx::Class::ResultDDL, it
 will throw an exception.  The generated method does call C<maybe::next::method> for you.
 
-=head2 add_index
+=head2 sqlt_add_index
 
 This is a direct passthrough to the function L<SQL::Translator::Schema::Table/add_index>,
 without any magic.  Since index DDL differs between database engines, I haven't
@@ -752,13 +752,28 @@ yet decided what syntactic sugar to use.
 
 See notes above about the generated C<sqlt_deploy_hook>.
 
-=head2 add_constraint
+=head2 sqlt_add_constraint
 
 This is a direct passthrough to the function L<SQL::Translator::Schema::Table/add_constraint>,
 without any magic.  Since constraint DDL differs between database engines, I haven't
 yet decided what syntactic sugar to use.
 
 See notes above about the generated C<sqlt_deploy_hook>.
+
+=head2 create_index
+
+  create_index $index_name => \@fields, %options;
+
+This is sugar for sqlt_add_index.  It translates to
+
+  sqlt_add_index( name => $index_name, fields => \@fields, options => \%options, (type => ?) );
+
+where the C<%options> are the L<SQL::Translator::Schema::Index/options>, except for C<type>
+which gets pulled out and used as L<SQL::Translator::Schema::Index/type>.
+
+=head2 idx
+
+Alias for L</create_index>; lines up nicely with 'col'.
 
 =cut
 
@@ -790,17 +805,37 @@ sub _get_sqlt_hook_method_array {
 		\@methods;
 	};
 }
-sub add_index {
+sub sqlt_add_index {
 	my $pkg= $CALLER || caller;
 	my $methods= _get_sqlt_hook_method_array($pkg);
 	push @$methods, [ add_index => @_ ];
 }
 
-sub add_constraint {
+sub sqlt_add_constraint {
 	my $pkg= $CALLER || caller;
 	my $methods= _get_sqlt_hook_method_array($pkg);
 	push @$methods, [ add_constraint => @_ ];
 }
+
+sub create_index {
+	my $pkg= $CALLER || caller;
+	my $name= ref $_[0]? undef : shift;
+	my $fields= shift;
+	ref $fields eq 'ARRAY'
+		or croak((defined $name? 'Second':'First').' argument must be arrayref of index fields');
+	my %options= @_;
+	my $type= delete $options{type};  # this is an attribute of Index, not a member of %options
+	my $methods= _get_sqlt_hook_method_array($pkg);
+	push @$methods, [
+		add_index =>
+			(defined $name? (name => $name) : ()),
+			fields => $fields,
+			(keys %options? (options => \%options) : ()),
+			(defined $type? (type => $type) : ())
+	];
+}
+
+BEGIN { *idx= *create_index; }
 
 =head1 MISSING FUNCTIONALITY
 

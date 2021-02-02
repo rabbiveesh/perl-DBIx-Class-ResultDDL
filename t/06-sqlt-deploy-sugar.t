@@ -15,8 +15,10 @@ my $ret= eval q{
 	col c0 => integer, auto_inc;
 	col c1 => integer;
 	primary_key 'c0';
-	add_index(name => 'x', fields => ['c1']);
-	add_constraint(name => 'y');
+	sqlt_add_index(name => 'x', fields => ['c1']);
+	sqlt_add_constraint(name => 'y');
+	idx z => [ 'c1' ];
+	create_index zz => [ 'c1' ], where => 'c1 > 5', type => 'SPATIAL';
 	1;
 };
 my $err= $@;
@@ -25,20 +27,12 @@ ok( test::Table1->can('sqlt_deploy_hook'), 'deploy hook installed' );
 my $mock_sqlt_table= Mock_sqlt_table->new;
 test::Table1->sqlt_deploy_hook($mock_sqlt_table);
 is( $mock_sqlt_table->calls,
-	array {
-		item 0 => array {
-			item 0 => 'add_index';
-			item 1 => 'name';
-			item 2 => 'x';
-			item 3 => 'fields';
-			item 4 => array { item 0 => 'c1'; };
-		};
-		item 1 => array {
-			item 0 => 'add_constraint';
-			item 1 => 'name';
-			item 2 => 'y';
-		};
-	},
+	[
+		[ 'add_index', name => 'x', fields => [ 'c1' ] ],
+		[ 'add_constraint', name => 'y' ],
+		[ 'add_index', name => 'z', fields => [ 'c1' ] ],
+		[ 'add_index', name => 'zz', fields => [ 'c1' ], options => { where => 'c1 > 5' }, type => 'SPATIAL' ],
+	],
 	'correct call'
 );
 
