@@ -157,7 +157,8 @@ my @V1= qw(
 	table view
 	col
 	  null default auto_inc fk
-	  integer unsigned tinyint smallint bigint decimal numeric
+	  integer unsigned tinyint smallint bigint decimal numeric money
+	  float float4 float8 double real
 	  char varchar nchar nvarchar binary varbinary blob text ntext
 	  date datetime timestamp enum bool boolean
 	  inflate_json array
@@ -334,6 +335,12 @@ sub _numeric    {
 	}
 	return data_type => $type.&_maybe_array, ($size? ( size => $size ) : ()), @_;
 }
+sub money       { data_type => 'money'.&_maybe_array, @_ }
+sub double      { data_type => 'double precision', @_ }
+*float8= *double;
+sub float       { my $size= &_maybe_size; data_type => 'float', (defined $size? (size => $size) : ()), @_ }
+sub real        { data_type => 'real'.&_maybe_array, @_ }
+*float4= *real;
 
 =item char, char($size)
 
