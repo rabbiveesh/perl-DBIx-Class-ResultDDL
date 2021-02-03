@@ -12,11 +12,12 @@ use Carp;
 
   package MyApp::Schema::Result::Artist;
   use DBIx::Class::ResultDDL -V1;
-  
   table 'artist';
   col id   => integer, unsigned, auto_inc;
   col name => varchar(25), null;
   primary_key 'id';
+  
+  idx artist__name => [ 'artist' ];
   
   has_many albums => { id => 'Album.artist_id' };
   rel_many impersonators => { name => 'Artist.name' };
@@ -73,20 +74,63 @@ sub autoclean :Export(-) {
 	on_scope_end { $$sref->clean };
 }
 
-=head2 C<-V2>, C<-Vx> (where x is a version number)
+=head2 C<-V1>
 
-Implies C<-swp>, C<:Vx>, and C<-autoclean>
+Implies C<-swp>, C<:V1>, and C<-autoclean>.
+
+=head2 C<-V0>
+
+Implies C<-swp>, C<:V0>, and C<-autoclean>.
 
 =cut
 
+sub V1 :Export(-) {
+	shift->exporter_also_import('-swp',':V1','-autoclean');
+}
 sub exporter_autoload_symbol {
 	my ($self, $sym)= @_;
-	if ($sym =~ /^-V(\d+)/) {
+	if ($sym =~ /^-V([0-9]+)$/) {
 		my $tag= ":V$1";
 		my $method= sub { shift->exporter_also_import('-swp',$tag,'-autoclean') };
-		return $EXPORT{$sym} ||= [ $method, 0 ]; # takes 0 arguments
+		return $self->exporter_register_option("V$1", $method);
 	}
-	$self->next::method($sym);
+	return shift->next::method(@_);
+}
+
+# The functions and tag list for previous versions are not loaded by default.
+# They are contained in a separate package ::V$N, which inherits many methods
+# from this one but then overrides all the ones whose API were different in
+# the past version.
+# In order to make those versions exportable, they have to be loaded into
+# the cache or symbol table of this package before they can be added to a tag
+# to get exported.  This also requires that they be given a different name
+# The pattern used here is to prefix # "v0_" and so on to the methods which
+# are re-defined in the subclass.
+sub exporter_autoload_tag {
+	my ($self, $name)= @_;
+	my $class= ref $self || $self;
+	if ($name =~ /^V([0-9]+)$/) {
+		my $v_pkg= "DBIx::Class::ResultDDL::$name";
+		my $v= $1;
+		eval "require $v_pkg"
+			or croak "Can't load package $v_pkg: $@";
+		my $ver_exports= $v_pkg->exporter_get_tag($name);
+		# For each tag member, see if it is the same as the method in this class.
+		# If not, bring it in as v${X}_${name} and then export { -as => $name }
+		my @tag;
+		for (@$ver_exports) {
+			if ($class->can($_) == $v_pkg->can($_)) {
+				push @tag, $_;
+			}
+			else {
+				my $install_as= "v${v}_$_";
+				$class->exporter_export($install_as => $v_pkg->can($_));
+				push @tag, $install_as, { -as => $_ };
+			}
+		}
+		return \@tag;
+	}
+	return shift->next::method(@_);
 }
 
 =head1 EXPORTED COLLECTIONS
@@ -104,35 +148,32 @@ This tag selects the following symbols:
     date datetime timestamp enum bool boolean
     inflate_json
   primary_key
-  unique idx create_index
   rel_one rel_many has_one might_have has_many belongs_to many_to_many
     ddl_cascade dbic_cascade
 
-=head2 C<:V0>
-
-Same as V1 but lacking C<unique>, and C<auto_inc> doesn't set the sqlite 'monotonic' flag.
-
 =cut
 
-my @common= qw(
-	table
+my @V1= qw(
+	table view
 	col
-	  null default fk
+	  null default auto_inc fk
 	  integer unsigned tinyint smallint bigint decimal numeric
 	  char varchar nchar nvarchar binary varbinary blob text ntext
 	  date datetime timestamp enum bool boolean
-	  inflate_json
-	primary_key
+	  inflate_json array
+	primary_key idx create_index unique sqlt_add_index sqlt_add_constraint
 	rel_one rel_many has_one might_have has_many belongs_to many_to_many
 	  ddl_cascade dbic_cascade
 );
-my @new_in_v1= qw(
-	sqlt_add_index sqlt_add_constraint idx create_index unique array view
-);
 our %EXPORT_TAGS;
-$EXPORT_TAGS{V1}= [ @common, 'auto_inc', @new_in_v1 ];
-$EXPORT_TAGS{V0}= [ @common, auto_inc0 => { -as => 'auto_inc' } ];
-export @common, qw( auto_inc auto_inc0 ), @new_in_v1;
+$EXPORT_TAGS{V1}= \@V1;
+export @V1;
+
+=head2 C<:V0>
+
+See L<DBIx::Class::ResultDDL::V0>.  The primary difference from V1 is lack of array
+column support, lack of index declaration support, and sugar methods do not pass
+through leftover unknown arguments.
 
 =head1 EXPORTED METHODS
 
@@ -185,6 +226,27 @@ sub col {
 	1;
 }
 
+sub _maybe_array {
+	my @dims;
+	while (@_ && ref $_[0] eq 'ARRAY') {
+		my $array= shift @_;
+		push @dims, @$array? @$array : '';
+	}
+	join '', map "[$_]", @dims
+}
+sub _maybe_size {
+	return shift if @_ && Scalar::Util::looks_like_number($_[0]);
+	return undef;
+}
+sub _maybe_size_or_max {
+	return shift if @_ && (Scalar::Util::looks_like_number($_[0]) || uc($_[0]) eq 'MAX');
+	return undef;
+}
+sub _maybe_timezone {
+	return shift if @_ && !ref $_[0];
+	return undef;
+}
+
 =over
 
 =item null
@@ -214,21 +276,21 @@ be platform-neutral, then you probably want this.  SQLite also requires data_typ
 
 =cut
 
-sub null       { is_nullable => 1 }
-sub auto_inc   { is_auto_increment => 1, 'extra.auto_increment_type' => 'monotonic' }
-sub auto_inc0  { is_auto_increment => 1 }
-sub fk         { is_foreign_key => (defined $_[0]? $_[0] : 1) }
-sub default    { default_value => (@_ > 1? [ @_ ] : $_[0]) }
+sub null        { is_nullable => 1, @_ }
+sub auto_inc    { is_auto_increment => 1, 'extra.auto_increment_type' => 'monotonic', @_ }
+sub fk          { is_foreign_key => 1, @_ }
+sub default     { default_value => (@_ > 1? [ @_ ] : $_[0]) }
 
-=item integer, integer($size)
+=item integer, integer($size), integer[], integer($size,[],...)
 
   data_type => 'integer', size => $size // 11
+  data_type => 'integer[]', size => $size // 11
 
 =item unsigned
 
   extra => { unsigned => 1 }
 
-MySQL specific flag to be combined with C<integer>
+MySQL specific flag which can be combined with C<integer>
 
 =item tinyint
 
@@ -252,17 +314,25 @@ MySQL specific flag to be combined with C<integer>
 
 =cut
 
-sub integer     { data_type => 'integer',   size => (defined $_[0]? $_[0] : 11) }
-sub unsigned    { 'extra.unsigned' => 1 }
-sub tinyint     { data_type => 'tinyint',   size => 4 }
-sub smallint    { data_type => 'smallint',  size => 6 }
-sub bigint      { data_type => 'bigint',    size => 22 }
+sub integer     {
+	my $size= shift if @_ && Scalar::Util::looks_like_number($_[0]);
+	data_type => 'integer'.&_maybe_array, size => $size || 11, @_
+}
+sub unsigned    { 'extra.unsigned' => 1, @_ }
+sub tinyint     { data_type => 'tinyint',   size =>  4, @_ }
+sub smallint    { data_type => 'smallint',  size =>  6, @_ }
+sub bigint      { data_type => 'bigint',    size => 22, @_ }
 sub decimal     { _numeric(decimal => @_) }
 sub numeric     { _numeric(numeric => @_) }
-sub _numeric {
+sub _numeric    {
 	my $type= shift;
-	my $size= @_ == 0? undef : [ @_ ];
-	return data_type => $type, ( @_ > 0? (size => [ @_ ]) : () )
+	my $precision= &_maybe_size;
+	my $size;
+	if (defined $precision) {
+		my $scale= &_maybe_size;
+		$size= defined $scale? [ $precision, $scale ] : [ $precision ];
+	}
+	return data_type => $type.&_maybe_array, ($size? ( size => $size ) : ()), @_;
 }
 
 =item char, char($size)
@@ -295,6 +365,15 @@ Constant for 'MAX', used by SQL Server for C<< varchar(MAX) >>.
 
   data_type => 'varbinary', size => $size // 255
 
+=item bit, bit($size)
+
+  data_type => 'bit', size => $size // 1
+
+=item varbit, varbit($size)
+
+  data_type => 'bit'
+  data_type => 'bit', size => $size
+
 =item blob, blob($size)
 
   data_type => 'blob',
@@ -307,6 +386,10 @@ conversion automatically according to which DBMS you are connected to.
 
 For SQL Server, newer versions deprecate C<blob> in favor of C<VARCHAR(MAX)>.  This is another
 detail you might take care of in sqlt_deploy_hook.
+
+=item bytea
+
+Postgres's blob type.  (no size is allowed)
 
 =item tinyblob
 
@@ -353,24 +436,30 @@ SQL-Server specific type for unicode C<text>.  Note that newer versions prefer C
 
 =cut
 
-sub char        { data_type => 'char',      size => (defined $_[0]? $_[0] : 1) }
-sub nchar       { data_type => 'nchar',     size => (defined $_[0]? $_[0] : 1) }
-sub varchar     { data_type => 'varchar',   size => (defined $_[0]? $_[0] : 255) }
-sub nvarchar    { data_type => 'nvarchar',  size => (defined $_[0]? $_[0] : 255) }
+sub char        { my $size= &_maybe_size;  data_type => 'char'.&_maybe_array, size => $size || 1, @_ }
+sub nchar       { my $size= &_maybe_size;  data_type => 'nchar'.&_maybe_array, size => $size || 1, @_ }
+sub varchar     { my $size= &_maybe_size_or_max;  data_type => 'varchar'.&_maybe_array, size => $size || 255, @_ }
+sub nvarchar    { my $size= &_maybe_size_or_max;  data_type => 'nvarchar'.&_maybe_array, size => $size || 255, @_ }
+sub binary      { my $size= &_maybe_size_or_max;  data_type => 'binary'.&_maybe_array, size => $size || 255, @_ }
+sub varbinary   { my $size= &_maybe_size_or_max;  data_type => 'varbinary'.&_maybe_array, size => $size || 255, @_ }
+sub bit         { my $size= &_maybe_size; data_type => 'bit'.&_maybe_array, size => (defined $size? $size : 1), @_ }
+sub varbit      { my $size= &_maybe_size; data_type => 'varbit'.&_maybe_array, (defined $size? (size => $size) : ()), @_ }
 sub MAX         { 'MAX' }
-sub binary      { data_type => 'binary',    size => (defined $_[0]? $_[0] : 255) }
-sub varbinary   { data_type => 'varbinary', size => (defined $_[0]? $_[0] : 255) }
 
-sub blob        { data_type => 'blob',      (defined $_[0]? (size => $_[0]) : ()) }
-sub tinyblob    { data_type => 'tinyblob',  size => 0xFF }
-sub mediumblob  { data_type => 'mediumblob',size => 0xFFFFFF }
-sub longblob    { data_type => 'longblob',  size => 0xFFFFFFFF }
+# postgres blob type
+sub bytea       { data_type => 'bytea'.&_maybe_array, @_ }
 
-sub text        { data_type => 'text',      (defined $_[0]? (size => $_[0]) : ()) }
-sub ntext       { data_type => 'ntext',     size => (defined $_[0]? $_[0] : 0x3FFFFFFF) }
-sub tinytext    { data_type => 'tinytext',  size => 0xFF }
-sub mediumtext  { data_type => 'mediumtext',size => 0xFFFFFF }
-sub longtext    { data_type => 'longtext',  size => 0xFFFFFFFF }
+# These aren't valid for Postgres, so no array notation needed
+sub blob          { my $size= &_maybe_size;  data_type => 'blob', (defined $size? (size => $size) : ()), @_ }
+sub tinyblob      { data_type => 'tinyblob',  size => 0xFF, @_ }
+sub mediumblob    { data_type => 'mediumblob',size => 0xFFFFFF, @_ }
+sub longblob      { data_type => 'longblob',  size => 0xFFFFFFFF, @_ }
+
+sub text          { my $size= &_maybe_size_or_max;  data_type => 'text'.&_maybe_array, (defined $size? (size => $size) : ()), @_ }
+sub ntext         { my $size= &_maybe_size_or_max;  data_type => 'ntext', size => ($size || 0x3FFFFFFF), @_ }
+sub tinytext      { data_type => 'tinytext',  size => 0xFF, @_ }
+sub mediumtext    { data_type => 'mediumtext',size => 0xFFFFFF, @_ }
+sub longtext      { data_type => 'longtext',  size => 0xFFFFFFFF, @_ }
 
 =item enum( @values )
 
@@ -380,21 +469,13 @@ sub longtext    { data_type => 'longtext',  size => 0xFFFFFFFF }
 
   data_type => 'boolean'
 
-Note that SQL Server has 'bit' instead.
-
-=item bit, bit($size)
-
-  data_type => 'bit', size => $size // 1
-
-To be database agnostic, consider using 'bool' and override C<< My::Scema::sqlt_deploy_hook >>
-to rewrite it to 'bit' when deployed to SQL Server.
+Note that SQL Server has 'bit' instead, though in postgres 'bit' is used for bitstrings.
 
 =cut
 
 sub enum        { data_type => 'enum', 'extra.list' => [ @_ ]}
-sub boolean     { data_type => 'boolean' }
-sub bool        { data_type => 'boolean' }
-sub bit         { data_type => 'bit',  size => (defined $_[0]? $_[0] : 1) }
+sub boolean     { data_type => 'boolean'.&_maybe_array, @_ }
+sub bool        { data_type => 'boolean'.&_maybe_array, @_ }
 
 =item date, date($timezone)
 
@@ -413,9 +494,9 @@ sub bit         { data_type => 'bit',  size => (defined $_[0]? $_[0] : 1) }
 
 =cut
 
-sub date        { data_type => 'date',     (@_? (time_zone => $_[0]) : ()) }
-sub datetime    { data_type => 'datetime', (@_? (time_zone => $_[0]) : ()) }
-sub timestamp   { data_type => 'timestamp',(@_? (time_zone => $_[0]) : ()) }
+sub date        { my $tz= &_maybe_timezone; data_type => 'date'.&_maybe_array,     ($tz? (time_zone => $tz) : ()), @_ }
+sub datetime    { my $tz= &_maybe_timezone; data_type => 'datetime'.&_maybe_array, ($tz? (time_zone => $tz) : ()), @_ }
+sub timestamp   { my $tz= &_maybe_timezone; data_type => 'timestamp'.&_maybe_array,($tz? (time_zone => $tz) : ()), @_ }
 
 sub array       { my $type = shift or die 'array needs a type'; data_type => $type . '[]' }
 

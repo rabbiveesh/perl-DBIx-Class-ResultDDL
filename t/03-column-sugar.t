@@ -89,6 +89,9 @@ test_col_defs(
 	[ 'numeric(4)',
 		{ data_type => 'numeric', size => [4] }
 	],
+	[ 'numeric 4,3,[]',
+		{ data_type => 'numeric[]', size => [4,3] }
+	]
 );
 
 # Version 1 adds "auto_increment_type => monotonic" for SQLite
@@ -122,6 +125,13 @@ test_col_defs(
 	[ 'varchar(10)',
 		{ data_type => 'varchar', size => 10, is_nullable => 0 }
 	],
+	versions => [1],
+	[ 'char[]',
+		{ data_type => 'char[]', size => 1 }
+	],
+	[ 'varchar 3,[], null',
+		{ data_type => 'varchar[]', size => 3, is_nullable => 1 }
+	]
 );
 
 test_col_defs(
