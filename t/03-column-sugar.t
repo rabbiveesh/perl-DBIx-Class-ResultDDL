@@ -3,6 +3,9 @@ no warnings 'once';
 use Data::Dumper;
 sub explain { Data::Dumper->new(\@_)->Indent(2)->Dump }
 
+# Don't actually want to require this for the test, so mock it
+$INC{'DBIx/Class/InflateColumn/Serializer.pm'}= 1;
+eval 'package DBIx::Class::InflateColumn::Serializer; our $VERSION=-1;';
 
 # test_col_defs $NAME, versions => \@VERSIONS, @COL_DEFS;
 #    COL_DEF ::= [ $PERL_DECL, \%column_info ]
@@ -91,6 +94,21 @@ test_col_defs(
 	],
 	[ 'numeric 4,3,[]',
 		{ data_type => 'numeric[]', size => [4,3] }
+	],
+	[ 'float(10)',
+		{ data_type => 'float', size => 10 }
+	],
+	[ 'float',
+		{ data_type => 'float' }
+	],
+	[ 'float4',
+		{ data_type => 'float4' }
+	],
+	[ 'double',
+		{ data_type => 'double precision' }
+	],
+	[ 'float8',
+		{ data_type => 'float8' }
 	]
 );
 
@@ -131,7 +149,14 @@ test_col_defs(
 	],
 	[ 'varchar 3,[], null',
 		{ data_type => 'varchar[]', size => 3, is_nullable => 1 }
-	]
+	],
+	[ 'uuid null',
+		{ data_type => 'uuid', is_nullable => 1 }
+	],
+	{ name => 'uuid',
+	  spec => 'uuid[]',
+	  column_info => { data_type => 'uuid[]' }
+	}
 );
 
 test_col_defs(
@@ -149,6 +174,21 @@ test_col_defs(
 );
 
 test_col_defs(
+	'json',
+	versions => [0,1],
+	[ 'text, inflate_json',
+		{ data_type => 'text', serializer_class => 'JSON' }
+	],
+	versions => [1],
+	[ 'json',
+		{ data_type => 'json' }
+	],
+	[ 'jsonb null inflate_json',
+		{ data_type => 'jsonb', is_nullable => 1, serializer_class => 'JSON' }
+	]
+);
+
+test_col_defs(
 	'arrays',
 	versions => [1],
 	[ 'array("text")',
@@ -156,6 +196,9 @@ test_col_defs(
 	],
 	[ 'array("int")',
 		{ data_type => 'int[]' }
+	],
+	[ 'integer[]',
+		{ data_type => 'integer[]' }
 	]
 );
 

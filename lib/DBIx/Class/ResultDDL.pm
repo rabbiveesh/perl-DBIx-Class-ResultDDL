@@ -159,9 +159,9 @@ my @V1= qw(
 	  null default auto_inc fk
 	  integer unsigned tinyint smallint bigint decimal numeric money
 	  float float4 float8 double real
-	  char varchar nchar nvarchar binary varbinary blob text ntext
+	  char varchar nchar nvarchar binary varbinary blob text ntext uuid
 	  date datetime timestamp enum bool boolean
-	  inflate_json array
+	  json jsonb inflate_json array
 	primary_key idx create_index unique sqlt_add_index sqlt_add_constraint
 	rel_one rel_many has_one might_have has_many belongs_to many_to_many
 	  ddl_cascade dbic_cascade
@@ -341,7 +341,7 @@ sub float8      { data_type => 'float8'.&_maybe_array, @_ }
 sub real        { data_type => 'real'.&_maybe_array, @_ }
 sub float4      { data_type => 'float4'.&_maybe_array, @_ }
 # the float used by SQL Server allows variable size spec as number of bits of mantissa
-sub float       { my $size= &_maybe_size; data_type => 'float', (defined $size? (size => $size) : ()), @_ }
+sub float       { my $size= &_maybe_size; data_type => 'float'.&_maybe_array, (defined $size? (size => $size) : ()), @_ }
 
 =item char, char($size)
 
@@ -468,6 +468,10 @@ sub ntext         { my $size= &_maybe_size_or_max;  data_type => 'ntext', size =
 sub tinytext      { data_type => 'tinytext',  size => 0xFF, @_ }
 sub mediumtext    { data_type => 'mediumtext',size => 0xFFFFFF, @_ }
 sub longtext      { data_type => 'longtext',  size => 0xFFFFFFFF, @_ }
+
+sub uuid          { data_type => 'uuid'.&_maybe_array, @_ }
+sub json          { data_type => 'json'.&_maybe_array, @_ }
+sub jsonb         { data_type => 'jsonb'.&_maybe_array, @_ }
 
 =item enum( @values )
 
