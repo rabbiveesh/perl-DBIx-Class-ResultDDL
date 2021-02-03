@@ -336,11 +336,12 @@ sub _numeric    {
 	return data_type => $type.&_maybe_array, ($size? ( size => $size ) : ()), @_;
 }
 sub money       { data_type => 'money'.&_maybe_array, @_ }
-sub double      { data_type => 'double precision', @_ }
-*float8= *double;
-sub float       { my $size= &_maybe_size; data_type => 'float', (defined $size? (size => $size) : ()), @_ }
+sub double      { data_type => 'double precision'.&_maybe_array, @_ }
+sub float8      { data_type => 'float8'.&_maybe_array, @_ }
 sub real        { data_type => 'real'.&_maybe_array, @_ }
-*float4= *real;
+sub float4      { data_type => 'float4'.&_maybe_array, @_ }
+# the float used by SQL Server allows variable size spec as number of bits of mantissa
+sub float       { my $size= &_maybe_size; data_type => 'float', (defined $size? (size => $size) : ()), @_ }
 
 =item char, char($size)
 
