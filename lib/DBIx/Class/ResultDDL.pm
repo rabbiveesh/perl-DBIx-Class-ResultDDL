@@ -12,12 +12,13 @@ use Carp;
 
   package MyApp::Schema::Result::Artist;
   use DBIx::Class::ResultDDL -V1;
+  
   table 'artist';
   col id   => integer, unsigned, auto_inc;
   col name => varchar(25), null;
   primary_key 'id';
   
-  idx artist__name => [ 'artist' ];
+  idx artist_by_name => [ 'name' ];
   
   has_many albums => { id => 'Album.artist_id' };
   rel_many impersonators => { name => 'Artist.name' };
@@ -42,9 +43,16 @@ simple export of symbols.
 
 =head2 C<-swp>
 
-Enable C<use strict> and C<use warnings> (unless those flags have been changed from the default
-via other means), and C<< use parent "DBIx::Class::Core" >> unless
-C<< __PACKAGE__->can('add_column') >>.
+"Strict, Warnings, Parent".
+
+Enable C<use strict> and C<use warnings> unless those flags have been changed from the default
+via other means.  In other words, you can still C<< use Moo >> or C<< use common::sense >>
+without this option overriding your choice.
+
+Then, C<< use parent "DBIx::Class::Core" >> unless the class already has an C<add_column>
+method.  If C<add_column> exists it is presumably because you already declared a parent class.
+Note that this check happens at BEGIN-time, so if you use Moo and C<< extends 'SomeClass'; >>
+you need to wrap that in a begin block before the C<< use DBIx::Class::ResultDDL -V1 >> line.
 
 =cut
 
@@ -104,7 +112,7 @@ sub exporter_autoload_symbol {
 # In order to make those versions exportable, they have to be loaded into
 # the cache or symbol table of this package before they can be added to a tag
 # to get exported.  This also requires that they be given a different name
-# The pattern used here is to prefix # "v0_" and so on to the methods which
+# The pattern used here is to prefix "v0_" and so on to the methods which
 # are re-defined in the subclass.
 sub exporter_autoload_tag {
 	my ($self, $name)= @_;
@@ -139,15 +147,15 @@ sub exporter_autoload_tag {
 
 This tag selects the following symbols:
 
-  table
+  table view
   col
     null default auto_inc fk
-    integer unsigned tinyint smallint bigint decimal numeric
-    char varchar nchar nvarchar binary varbinary blob text ntext
-    tinyblob mediumblob longblob tinytext mediumtext longtext
+    integer unsigned tinyint smallint bigint decimal numeric money
+    float float4 float8 double real
+    char varchar nchar nvarchar binary varbinary blob text ntext uuid
     date datetime timestamp enum bool boolean
-    inflate_json
-  primary_key
+    json jsonb inflate_json array
+  primary_key idx create_index unique sqlt_add_index sqlt_add_constraint
   rel_one rel_many has_one might_have has_many belongs_to many_to_many
     ddl_cascade dbic_cascade
 
@@ -174,9 +182,9 @@ export @V1;
 
 See L<DBIx::Class::ResultDDL::V0>.  The primary difference from V1 is lack of array
 column support, lack of index declaration support, and sugar methods do not pass
-through leftover unknown arguments.
+through leftover unknown arguments.  Also new Postgres column types were added in V1.
 
-=head1 EXPORTED METHODS
+=head1 EXPORTED FUNCTIONS
 
 =head2 table
 
@@ -282,36 +290,75 @@ sub auto_inc    { is_auto_increment => 1, 'extra.auto_increment_type' => 'monoto
 sub fk          { is_foreign_key => 1, @_ }
 sub default     { default_value => (@_ > 1? [ @_ ] : $_[0]) }
 
-=item integer, integer($size), integer[], integer($size,[],...)
+=item C<integer>, C<integer($size)>, C<integer[]>, C<integer $size,[]>
 
-  data_type => 'integer', size => $size // 11
-  data_type => 'integer[]', size => $size // 11
+  data_type => 'integer', size => $size || 11
+  data_type => 'integer[]', size => $size || 11
 
-=item unsigned
+=item C<unsigned>
 
   extra => { unsigned => 1 }
 
 MySQL specific flag which can be combined with C<integer>
 
-=item tinyint
+=item C<tinyint>
 
   data_type => 'tinyint', size => 4
 
-=item smallint
+=item C<smallint>
 
   data_type => 'smallint', size => 6
 
-=item bigint
+=item C<bigint>
 
   data_type => 'bigint', size => 22
 
-=item decimal( $whole, $deci )
+=item C<numeric>, C<numeric($p)>, C<numeric($p,$s)>, C<numeric[]>, C<numeric $p,$s,[]>
 
-  data_type => 'decimal', size => [ $whole, $deci ]
+  data_type => 'numeric'
+  data_type => 'numeric', size => [ $p ]
+  data_type => 'numeric', size => [ $p, $s ]
+  data_type => 'numeric[]'
+  data_type => 'numeric[]', size => [ $p, $s ]
 
-=item numeric( $whole, $deci )
+=item C<decimal>
 
-  data_type => 'numeric', size => [ $whole, $deci ]
+Identical to C<numeric>, but sets C<< data_type => 'decimal' >>
+
+=item C<money>, C<money[]>
+
+  data_type => 'money'
+  data_type => 'money[]'
+
+=item C<real>, C<real[]>
+
+  data_type => 'real'
+  data_type => 'real[]'
+
+=item C<float4>, C<float4[]>
+
+  data_type => 'float4'
+  data_type => 'float4[]'
+
+=item C<double>, C<double[]>
+
+  data_type => 'double precision'
+  data_type => 'double precision[]'
+
+=item C<float8>, C<float8[]>
+
+  data_type => 'float8'
+  data_type => 'float8[]'
+
+=item C<float>, C<float($bits)>, C<float[]>, C<float $bits,[]>
+
+  data_type => 'float'
+  data_type => 'float', size => $bits
+  data_type => 'float[]'
+  data_type => 'float[], size => $bits
+
+SQLServer and Postgres offer this, where C<$bits> is the number of bits of precision
+of the mantissa.  Array notation is supported for Postgres.
 
 =cut
 
@@ -343,46 +390,60 @@ sub float4      { data_type => 'float4'.&_maybe_array, @_ }
 # the float used by SQL Server allows variable size spec as number of bits of mantissa
 sub float       { my $size= &_maybe_size; data_type => 'float'.&_maybe_array, (defined $size? (size => $size) : ()), @_ }
 
-=item char, char($size)
+=item C<char>, C<char($size)>, C<char[]>, C<char $size,[]>
 
   data_type => 'char', size => $size // 1
+  data_type => 'char[]', size => $size // 1
 
-=item varchar, varchar($size), varchar(MAX)
+=item C<varchar>, C<varchar($size)>, C<varchar(MAX)>, C<varchar[]>, C<varchar $size,[]>
 
-  data_type => 'varchar', size => $size // 255
+  data_type => 'varchar'
+  data_type => 'varchar', size => $size  # "MAX" is a valid size for SQL Server
+  data_type => 'varchar[]'
+  data_type => 'varchar[]', size => $size
 
-=item nchar
+=item C<nchar>, C<nchar($size)>
 
-SQL Server specific type for unicode char
+SQL Server specific type for unicode char.  Same API as C<char>.
 
-=item nvarchar, nvarchar($size), nvarchar(MAX)
+=item C<nvarchar>
 
-SQL Server specific type for unicode character data.
+SQL Server specific type for unicode varying character string.  Same API as C<varchar>.
 
-  data_type => 'nvarchar', size => $size // 255
-
-=item MAX
+=item C<MAX>
 
 Constant for 'MAX', used by SQL Server for C<< varchar(MAX) >>.
 
-=item binary, binary($size)
+=item C<binary>, C<binary($size)>, C<binary[]>, C<binary $size,[]>
 
-  data_type => 'binary', size => $size // 255
+  data_type => 'binary'
+  data_type => 'binary', size => $size
+  data_type => 'binary[]'
+  data_type => 'binary[]', size => $size
 
-=item varbinary, varbinary($size)
+=item C<varbinary>, C<varbinary($size)>, C<varbinary[]>, C<varbinary $size,[]>
 
-  data_type => 'varbinary', size => $size // 255
+  data_type => 'varbinary'
+  data_type => 'varbinary', size => $size
+  data_type => 'varbinary[]'
+  data_type => 'varbinary[]', size => $size
 
-=item bit, bit($size)
+=item C<bit>, C<bit($size)>, C<bit[]>, C<bit $size,[]>
 
   data_type => 'bit', size => $size // 1
+  data_type => 'bit[]', size => $size // 1
 
-=item varbit, varbit($size)
+Note that Postgres allows length-N bit strings, and arrays of length-N bit strings,
+but SQL Server uses this same type name to represent a single bit.
 
-  data_type => 'bit'
-  data_type => 'bit', size => $size
+=item C<varbit>, C<varbit($size)>, C<varbit[]>, C<varbit $size,[]>
 
-=item blob, blob($size)
+  data_type => 'varbit'
+  data_type => 'varbit', size => $size
+  data_type => 'varbit[]'
+  data_type => 'varbit[]', size => $size
+
+=item C<blob>, C<blob($size)>
 
   data_type => 'blob',
   size => $size if defined $size
@@ -395,61 +456,63 @@ conversion automatically according to which DBMS you are connected to.
 For SQL Server, newer versions deprecate C<blob> in favor of C<VARCHAR(MAX)>.  This is another
 detail you might take care of in sqlt_deploy_hook.
 
-=item bytea
+=item C<bytea>, C<bytea[]>
 
 Postgres's blob type.  (no size is allowed)
 
-=item tinyblob
+=item C<tinyblob>
 
 MySQL-specific type for small blobs
 
   data_type => 'tinyblob', size => 0xFF
 
-=item mediumblob
+=item C<mediumblob>
 
 MySQL-specific type for larger blobs
 
   data_type => 'mediumblob', size => 0xFFFFFF
 
-=item longblob
+=item C<longblob>
 
 MySQL-specific type for the longest supported blob type
 
   data_type => 'longblob', size => 0xFFFFFFFF
 
-=item text, text($size)
+=item C<text>, C<text($size)>, C<text[]>
 
   data_type => 'text',
-  size => $size if defined $size
+  data_type => 'text', size => $size
+  data_type => 'text[]'
 
 See MySQL notes in C<blob>.  For SQL Server, you might want C<ntext> or C<< varchar(MAX) >> instead.
+Postgres does not use a size, and allows arrays of this type.
 
-=item tinytext
+=item C<tinytext>
 
   data_type => 'tinytext', size => 0xFF
 
-=item mediumtext
+=item C<mediumtext>
 
   data_type => 'mediumtext', size => 0xFFFFFF
 
-=item longtext
+=item C<longtext>
 
   data_type => 'longtext', size => 0xFFFFFFFF
 
-=item ntext
+=item C<ntext>, C<ntext($size)>
 
 SQL-Server specific type for unicode C<text>.  Note that newer versions prefer C<< nvarchar(MAX) >>.
 
-  data_type => 'ntext', size => 0x3FFFFFFF
+  data_type => 'ntext', size => $size // 0x3FFFFFFF
 
 =cut
 
 sub char        { my $size= &_maybe_size;  data_type => 'char'.&_maybe_array, size => $size || 1, @_ }
 sub nchar       { my $size= &_maybe_size;  data_type => 'nchar'.&_maybe_array, size => $size || 1, @_ }
-sub varchar     { my $size= &_maybe_size_or_max;  data_type => 'varchar'.&_maybe_array, size => $size || 255, @_ }
-sub nvarchar    { my $size= &_maybe_size_or_max;  data_type => 'nvarchar'.&_maybe_array, size => $size || 255, @_ }
-sub binary      { my $size= &_maybe_size_or_max;  data_type => 'binary'.&_maybe_array, size => $size || 255, @_ }
-sub varbinary   { my $size= &_maybe_size_or_max;  data_type => 'varbinary'.&_maybe_array, size => $size || 255, @_ }
+sub varchar     { my $size= &_maybe_size_or_max;  data_type => 'varchar'.&_maybe_array, size => $size, @_ }
+sub nvarchar    { my $size= &_maybe_size_or_max;  data_type => 'nvarchar'.&_maybe_array, size => $size, @_ }
+sub binary      { my $size= &_maybe_size_or_max;  data_type => 'binary'.&_maybe_array, size => $size, @_ }
+sub varbinary   { my $size= &_maybe_size_or_max;  data_type => 'varbinary'.&_maybe_array, size => $size, @_ }
 sub bit         { my $size= &_maybe_size; data_type => 'bit'.&_maybe_array, size => (defined $size? $size : 1), @_ }
 sub varbit      { my $size= &_maybe_size; data_type => 'varbit'.&_maybe_array, (defined $size? (size => $size) : ()), @_ }
 sub MAX         { 'MAX' }
@@ -469,15 +532,11 @@ sub tinytext      { data_type => 'tinytext',  size => 0xFF, @_ }
 sub mediumtext    { data_type => 'mediumtext',size => 0xFFFFFF, @_ }
 sub longtext      { data_type => 'longtext',  size => 0xFFFFFFFF, @_ }
 
-sub uuid          { data_type => 'uuid'.&_maybe_array, @_ }
-sub json          { data_type => 'json'.&_maybe_array, @_ }
-sub jsonb         { data_type => 'jsonb'.&_maybe_array, @_ }
-
-=item enum( @values )
+=item C<< enum( @values ) >>
 
   data_type => 'enum', extra => { list => [ @values ] }
 
-=item bool, boolean
+=item C<bool>, C<boolean>
 
   data_type => 'boolean'
 
@@ -510,7 +569,36 @@ sub date        { my $tz= &_maybe_timezone; data_type => 'date'.&_maybe_array,  
 sub datetime    { my $tz= &_maybe_timezone; data_type => 'datetime'.&_maybe_array, ($tz? (time_zone => $tz) : ()), @_ }
 sub timestamp   { my $tz= &_maybe_timezone; data_type => 'timestamp'.&_maybe_array,($tz? (time_zone => $tz) : ()), @_ }
 
+=item C<array($type)>
+
+Declares a postgres array type with notation C<< data_type => $type . '[]' >> 
+
+=cut
+
 sub array       { my $type = shift or die 'array needs a type'; data_type => $type . '[]' }
+
+=item C<uuid>, C<uuid[]>
+
+  data_type => 'uuid'
+  data_type => 'uuid[]'
+
+=cut
+
+sub uuid          { data_type => 'uuid'.&_maybe_array, @_ }
+
+=item C<json>, C<json[]>
+
+  data_type => 'json'
+  data_type => 'json[]'
+
+If C<< -inflate_json >> use-line option was given, this will additionally imply C<< serializer_class => 'JSON' >>.
+
+=item C<jsonb>, C<jsonb[]>
+
+  data_type => 'jsonb'
+  data_type => 'jsonb[]'
+
+If C<< -inflate_json >> use-line option was given, this will additionally imply C<< serializer_class => 'JSON' >>.
 
 =item inflate_json
 
@@ -583,7 +671,7 @@ name in place of "foreign.".
   has_many $rel_name, $peer_class, $condition, @attr_list;
   has_many $rel_name, { colname => "$ResultClass.$colname" }, @attr_list;
   # becomes...
-  __PACKAGE__->has_one($rel_name, $peer_class, $condition, { @attr_list });
+  __PACKAGE__->has_many($rel_name, $peer_class, $condition, { @attr_list });
   
 =head2 many_to_many
 
@@ -840,16 +928,14 @@ will throw an exception.  The generated method does call C<maybe::next::method> 
 =head2 sqlt_add_index
 
 This is a direct passthrough to the function L<SQL::Translator::Schema::Table/add_index>,
-without any magic.  Since index DDL differs between database engines, I haven't
-yet decided what syntactic sugar to use.
+without any magic.
 
 See notes above about the generated C<sqlt_deploy_hook>.
 
 =head2 sqlt_add_constraint
 
 This is a direct passthrough to the function L<SQL::Translator::Schema::Table/add_constraint>,
-without any magic.  Since constraint DDL differs between database engines, I haven't
-yet decided what syntactic sugar to use.
+without any magic.
 
 See notes above about the generated C<sqlt_deploy_hook>.
 
@@ -861,8 +947,9 @@ This is sugar for sqlt_add_index.  It translates to
 
   sqlt_add_index( name => $index_name, fields => \@fields, options => \%options, (type => ?) );
 
-where the C<%options> are the L<SQL::Translator::Schema::Index/options>, except for C<type>
-which gets pulled out and used as L<SQL::Translator::Schema::Index/type>.
+where the C<%options> are the L<SQL::Translator::Schema::Index/options>, except if
+one of the keys is C<type>, then that key/value gets pulled out and used as
+L<SQL::Translator::Schema::Index/type>.
 
 =head2 idx
 
