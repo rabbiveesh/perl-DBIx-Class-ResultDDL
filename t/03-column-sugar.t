@@ -181,12 +181,16 @@ test_col_defs(
 	],
 	versions => [1],
 	[ 'json',
-		{ data_type => 'json' }
+		{ data_type => 'json', serializer_class => DNE }
 	],
 	[ 'jsonb null inflate_json',
 		{ data_type => 'jsonb', is_nullable => 1, serializer_class => 'JSON' }
-	]
+	],
 );
+is( eval 'package test::JSONAutoInflate; use DBIx::Class::ResultDDL qw/ -V1 -inflate_json /; [ json ]',
+	[ data_type => 'json', serializer_class => 'JSON' ],
+	'verify that inflate_json sets serializer class'
+) or diag $@;
 
 test_col_defs(
 	'arrays',

@@ -176,7 +176,7 @@ my @V1= qw(
 );
 our %EXPORT_TAGS;
 $EXPORT_TAGS{V1}= \@V1;
-export @V1;
+export grep !/^jsonb?$/, @V1; # the json and jsonb functions are exported as generators, below
 
 =head2 C<:V0>
 
@@ -609,11 +609,34 @@ added already.
 
 =cut
 
+sub _auto_inflate_json :Export(-inflate_json) {
+	my $self= shift;
+	@{ $self->{json_defaults} ||= [] }= ( serializer_class => 'JSON' );
+}
+
+# This is a generator that includes the json_args into the installed method.
+sub json :Export(=) {
+	my $json_defaults= $_[0]{json_defaults} ||= [];
+	my $pkg= ($CALLER||caller);
+	$pkg->load_components('InflateColumn::Serializer')
+		if !$pkg->isa('DBIx::Class::InflateColumn::Serializer')
+			&& (grep $_ eq 'serislizer_class', @$json_defaults);
+	return sub { data_type => 'json'.&_maybe_array, @$json_defaults, @_ }
+}
+sub jsonb :Export(=) {
+	my $json_defaults= $_[0]{json_defaults} ||= [];
+	my $pkg= ($CALLER||caller);
+	$pkg->load_components('InflateColumn::Serializer')
+		if !$pkg->isa('DBIx::Class::InflateColumn::Serializer')
+			&& (grep $_ eq 'serislizer_class', @$json_defaults);
+	return sub { data_type => 'jsonb'.&_maybe_array, @$json_defaults, @_ }
+}
+
 sub inflate_json {
 	my $pkg= ($CALLER||caller);
 	$pkg->load_components('InflateColumn::Serializer')
 		unless $pkg->isa('DBIx::Class::InflateColumn::Serializer');
-	return serializer_class => 'JSON';
+	return serializer_class => 'JSON', @_;
 }
 
 =back
