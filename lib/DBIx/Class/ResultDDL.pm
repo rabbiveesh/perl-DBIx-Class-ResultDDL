@@ -62,10 +62,15 @@ sub swp :Export(-) {
 	my $self= shift;
 	require strict; strict->import if $^H == $DBIx::Class::ResultDDL::_default_h;
 	require warnings; warnings->import if $^W == $DBIx::Class::ResultDDL::_default_w;
-	unless ($self->{into}->can('add_column')) {
+	$self->_inherit_dbic;
+}
+sub _inherit_dbic {
+	my $self= shift;
+	my $pkg= $self->{into};
+	unless ($pkg->can('load_components') && $pkg->can('add_column')) {
 		require DBIx::Class::Core;
 		no strict 'refs';
-		push @{ $self->{into} . '::ISA' }, 'DBIx::Class::Core';
+		push @{ $pkg . '::ISA' }, 'DBIx::Class::Core';
 	}
 }
 
@@ -139,6 +144,33 @@ sub exporter_autoload_tag {
 		return \@tag;
 	}
 	return shift->next::method(@_);
+}
+
+=head2 C<-inflate_datetime>
+
+Inflate all date columns to DateTime objects, by adding the DBIC component
+L<DBIx::Class::InflateColumn::DateTime>.
+
+=head2 C<-inflate_json>
+
+Causes all columns declared with C<json> or C<jsonb> sugar methods to also
+declare C<inflate_json>.
+
+=cut
+
+sub enable_inflate_datetime :Export(-inflate_datetime) {
+	my $self= shift;
+	$self->_inherit_dbic;
+	$self->{into}->load_components('InflateColumn::DateTime')
+		unless $self->{into}->isa('DBIx::Class::InflateColumn::DateTime');
+}
+
+sub enable_inflate_json :Export(-inflate_json) {
+	my $self= shift;
+	$self->_inherit_dbic;
+	$self->{into}->load_components('InflateColumn::Serializer')
+		unless $self->{into}->isa('DBIx::Class::InflateColumn::Serializer');
+	($self->{ResultDDL_json_defaults} ||= {})->{serializer_class}= 'JSON';
 }
 
 =head1 EXPORTED COLLECTIONS
@@ -609,27 +641,14 @@ added already.
 
 =cut
 
-sub _auto_inflate_json :Export(-inflate_json) {
-	my $self= shift;
-	@{ $self->{json_defaults} ||= [] }= ( serializer_class => 'JSON' );
-}
-
 # This is a generator that includes the json_args into the installed method.
 sub json :Export(=) {
-	my $json_defaults= $_[0]{json_defaults} ||= [];
-	my $pkg= ($CALLER||caller);
-	$pkg->load_components('InflateColumn::Serializer')
-		if !$pkg->isa('DBIx::Class::InflateColumn::Serializer')
-			&& (grep $_ eq 'serislizer_class', @$json_defaults);
-	return sub { data_type => 'json'.&_maybe_array, @$json_defaults, @_ }
+	my $json_defaults= $_[0]{ResultDDL_json_defaults} ||= {};
+	return sub { data_type => 'json'.&_maybe_array, %$json_defaults, @_ }
 }
 sub jsonb :Export(=) {
-	my $json_defaults= $_[0]{json_defaults} ||= [];
-	my $pkg= ($CALLER||caller);
-	$pkg->load_components('InflateColumn::Serializer')
-		if !$pkg->isa('DBIx::Class::InflateColumn::Serializer')
-			&& (grep $_ eq 'serislizer_class', @$json_defaults);
-	return sub { data_type => 'jsonb'.&_maybe_array, @$json_defaults, @_ }
+	my $json_defaults= $_[0]{ResultDDL_json_defaults} ||= {};
+	return sub { data_type => 'jsonb'.&_maybe_array, %$json_defaults, @_ }
 }
 
 sub inflate_json {
